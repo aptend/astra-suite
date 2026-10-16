@@ -1934,7 +1934,11 @@ mod tests {
         );
 
         let session_id = result.session_id.clone();
-        pool.kill("live-astra-app-server-e2e");
+        let first_process = pool
+            .processes
+            .get("live-astra-app-server-e2e")
+            .cloned()
+            .expect("first astra process should still be running");
         let mut second_progress = pool
             .begin_turn(
                 "live-astra-app-server-e2e",
@@ -1948,7 +1952,13 @@ mod tests {
                 None,
             )
             .await
-            .expect("second astra turn should resume the persisted thread");
+            .expect("second astra turn should reuse the running process");
+        assert!(Arc::ptr_eq(
+            &first_process,
+            pool.processes
+                .get("live-astra-app-server-e2e")
+                .expect("second turn should keep the first astra process")
+        ));
         let second_deadline = tokio::time::sleep(std::time::Duration::from_secs(180));
         tokio::pin!(second_deadline);
         loop {
@@ -1966,13 +1976,13 @@ mod tests {
             .result("live-astra-app-server-e2e")
             .await
             .expect("second pool result should exist");
-        pool.kill("live-astra-app-server-e2e");
         assert!(
             second_result.success,
             "second turn should succeed: {}",
             second_result.stderr
         );
         assert_eq!(second_result.session_id, session_id);
+        pool.kill("live-astra-app-server-e2e");
     }
 
     #[tokio::test]
